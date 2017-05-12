@@ -17,6 +17,9 @@
 # You should have received a copy of the GNU General Public License
 # along with Database Navigator.  If not, see <http://www.gnu.org/licenses/>.
 #
+import sys,json
+import cPickle as pickle
+import hashlib, tempfile, os
 
 import logging
 import warnings
@@ -51,6 +54,7 @@ class DatabaseConnection(BaseItem):
         self._inspector = None
         self._meta = None
         self._con = None
+        self._schema_cache_path = None
 
     def title(self):
         return self.__repr__()
@@ -80,12 +84,29 @@ class DatabaseConnection(BaseItem):
     def engine(self):
         return self._engine
 
+    def schema_cache_path(self):
+        if self._schema_cache_path is None:
+            self._schema_cache_path = os.path.join(tempfile.gettempdir(), hashlib.md5(str(self._engine)).hexdigest() )
+        return self._schema_cache_path
+
     def meta(self):
+        if self._meta is None:
+            logger.debug("searching for cached schema %s", self.schema_cache_path())
+            try:
+                with open(self.schema_cache_path(), "r") as f:
+                    self._meta = pickle.load(f)
+                logger.warning("using cached schema %s", self.schema_cache_path())
+            except:
+                logger.debug("Could not read cached schema")
+
         if self._meta is None:
             self._meta = MetaData()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=sa_exc.SAWarning)
                 self._meta.reflect(bind=self._engine)
+
+            with open(self.schema_cache_path(), "w") as f:
+                pickle.dump(self._meta, f)
 
         return self._meta
 
